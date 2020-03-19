@@ -2,8 +2,12 @@
 --
 Process video frames to estimate velocity vector field.
 """
+from vessel import Vessel
+
 import cv2
 import numpy as np
+from skimage import feature
+from tqdm import tqdm
 
 
 # Point this to a folder containing the raw video frames (assumed jpeg).
@@ -79,4 +83,4 @@ def process_images(tile_size=100, max_number_images=1000, dt=DELTA_TIME):
 if __name__ == "__main__":
 
     # Run the process_images function to predict vector field on image sequences...
-    process_images()
+    process_images(max_number_images=3)

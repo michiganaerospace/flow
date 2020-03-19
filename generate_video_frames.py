@@ -1,3 +1,11 @@
+"""generate_video_frames.py
+--
+Uses generated vector field data to generate video frames. By default these
+frames are stored in /videos. To assemble these frames into a movie, navigate
+to that directory and run:
+
+$ ffmpeg -f image2 -r 30 -i image_%04d.png -vb 20M -vcodec mpeg4 -y movie_name.mp4
+"""
 import cv2
 import numpy as np
 import pylab as plt
