@@ -1,6 +1,8 @@
 """predict_vector_field.py
 --
-Process video frames to estimate velocity vector field.
+Process video frames to estimate velocity vector field. Saves the data to a
+Vessel .dat file that is by default called fields.dat. This file will be used
+by generate_video_frames.py to generate example frames.
 """
 from vessel import Vessel
 
@@ -83,4 +85,4 @@ def process_images(tile_size=100, max_number_images=1000, dt=DELTA_TIME):
 if __name__ == "__main__":
 
     # Run the process_images function to predict vector field on image sequences...
-    process_images(max_number_images=3)
+    process_images()

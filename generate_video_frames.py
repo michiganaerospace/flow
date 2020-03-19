@@ -23,11 +23,13 @@ def load_image(image_number):
 
 if __name__ == "__main__":
 
+    # Load the previously calculated velocity field data.
     data = Vessel("fields.dat")
     image_location = "./videos"
+    MAX_NUMBER_FRAMES = 1000
 
     plt.ioff()
-    for it in tqdm(np.arange(1, 1000)):
+    for it in tqdm(np.arange(1, MAX_NUMBER_FRAMES)):
         plt.close("all")
         img = load_image(it)
         plt.imshow(img, cmap="bone")
