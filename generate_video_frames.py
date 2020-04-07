@@ -15,7 +15,7 @@ from argos.utils.vessel import Vessel
 
 
 def load_image(image_number):
-    path_to_image = f"waves2997fps/img{image_number}.jpeg"
+    path_to_image = f"waves40fps/img{image_number}.jpeg"
     img = cv2.imread(path_to_image)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     return img
@@ -26,7 +26,7 @@ if __name__ == "__main__":
     # Load the previously calculated velocity field data.
     data = Vessel("fields.dat")
     image_location = "./videos"
-    MAX_NUMBER_FRAMES = 1000
+    MAX_NUMBER_FRAMES = 10
 
     plt.ioff()
     for it in tqdm(np.arange(1, MAX_NUMBER_FRAMES)):
