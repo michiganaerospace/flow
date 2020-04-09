@@ -3,6 +3,8 @@
 Process video frames to estimate velocity vector field. Saves the data to a
 Vessel .dat file that is by default called fields.dat. This file will be used
 by generate_video_frames.py to generate example frames.
+
+Takes argument FOLDER_NAME with raw wave images and FRAME_RATE.
 """
 from vessel import Vessel
 
@@ -11,20 +13,15 @@ import numpy as np
 from skimage import feature
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+import sys
+from utils import enhance, load_image_num
 
 
-# Point this to a folder containing the raw video frames (assumed jpeg).
-LOCATION_OF_RAW_IMAGES = "./waves40fps"  # "./waves2997fps"
-FRAME_RATE = 29.97  # FPS of original video
-FRAME_INTERVAL = 5  # Compare imaes this many steps apart.
+FOLDER_NAME = sys.argv[1:][0]
+FRAME_RATE = float(sys.argv[1:][1])
+LOCATION_ENHANCED_IMGS = f"enhanced_{FOLDER_NAME}"
+FRAME_INTERVAL = 5  # Compare images this many steps apart.
 DELTA_TIME = FRAME_INTERVAL / FRAME_RATE
-
-
-def load_image(image_number):
-    path_to_image = f"{LOCATION_OF_RAW_IMAGES}/img{image_number}.jpeg"
-    img = cv2.imread(path_to_image)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    return img
 
 
 def estimate_velocity(first_image, second_image, dt):
@@ -133,14 +130,14 @@ def estimate_velocity_field(first_image, second_image, tile_size, step_size, dt)
     return full_rc, img_field
 
 
-def process_images(tile_size=300, step_size=100, max_number_images=10, dt=DELTA_TIME):
+def process_images(tile_size=100, step_size=200, max_number_images=10, dt=DELTA_TIME):
     """Process multiple images."""
     crs = []
     vfs = []
     image_numbers = []
     for image_number in tqdm(np.arange(1, max_number_images)):
-        img1 = load_image(image_number)
-        img2 = load_image(image_number + FRAME_INTERVAL)
+        img1 = load_image_num(image_number)
+        img2 = load_image_num(image_number + FRAME_INTERVAL)
         cr, vf = estimate_velocity_field(
             img1, img2, tile_size, step_size, dt)
         crs.append(cr)
@@ -158,6 +155,10 @@ def process_images(tile_size=300, step_size=100, max_number_images=10, dt=DELTA_
 
 
 if __name__ == "__main__":
+
+    # Work with enhanced images.
+    if not os.path.isdir(LOCATION_ENHANCED_IMGS):
+        enhance(FOLDER_NAME)
 
     # Run the process_images function to predict vector field on image sequences...
     process_images()
