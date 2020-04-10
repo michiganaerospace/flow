@@ -3,9 +3,17 @@
 ## Usage
 
 Flow is designed to estimate velocity fields from successive frames in a video.
-Usage is straightforward. Put your consecutively numbered images in the
-`waves2997fps/` folder (or other designated spot) and run the
-`predict_vector_field.py` script. 
+Usage is straightforward. 
+
+Determine the frame rate for a given video: 
+```unix
+$ ffmpeg -i input.mp4 
+```
+Create consecutively numbered images for the given video, providing the previously determined frame rate: 
+```unix
+$ ffmpeg -i input.mp4 -vf fps=29.97 img%d.jpeg
+```
+Run `predict_vector_field.py` script with arguments `FOLDER_NAME` where images are located and `FRAME_RATE`.
 
 This script will loop through the available images, estimating a velocity vector field 
 at grid points distributed across the image. It saves the field data in a data file
