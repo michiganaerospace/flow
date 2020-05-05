@@ -24,23 +24,45 @@ FOLDER_NAME = sys.argv[1:][0]
 if __name__ == "__main__":
 
     # Load the previously calculated velocity field data.
-    data = Vessel("fields.dat")
-    image_location = "./videos"
-    MAX_NUMBER_FRAMES = 10
+    data_kalman = Vessel("fields_kalman.dat")
+    image_location_kalman = "./videos/kalman"
+    data_weighted = Vessel("fields_weighted.dat")
+    image_location_weighted = "./videos/weighted"
+    data_update = Vessel("fields_update.dat")
+    image_location_update = "./videos/updated"
+    MAX_NUMBER_FRAMES = 100
 
     # Clear previous frames.
-    imgs = glob("./videos/*.png")
+    imgs = glob("./videos/**/*.png")
     for img in imgs:
         os.remove(img)
 
     plt.ioff()
     for it in tqdm(np.arange(1, MAX_NUMBER_FRAMES)):
-        plt.close("all")
         img = load_image_num(it, FOLDER_NAME)
+        plt.close("all")
         plt.imshow(img, cmap="bone")
-        x = data.crs[it - 1, :, 1]
-        y = data.crs[it - 1, :, 0]
-        u = data.vfs[it - 1, :, 1]
-        v = data.vfs[it - 1, :, 0]
+        x = data_kalman.crs[it - 1, :, 1]
+        y = data_kalman.crs[it - 1, :, 0]
+        u = data_kalman.vfs[it - 1, :, 1]
+        v = data_kalman.vfs[it - 1, :, 0]
         plt.quiver(y, x, u, v, color="yellow")
-        plt.savefig(f"{image_location}/image_{it:04d}.png")
+        plt.savefig(f"{image_location_kalman}/image_{it:04d}.png")
+
+        plt.close("all")
+        plt.imshow(img, cmap="bone")
+        x = data_weighted.crs[it - 1, :, 1]
+        y = data_weighted.crs[it - 1, :, 0]
+        u = data_weighted.vfs[it - 1, :, 1]
+        v = data_weighted.vfs[it - 1, :, 0]
+        plt.quiver(y, x, u, v, color="yellow")
+        plt.savefig(f"{image_location_weighted}/image_{it:04d}.png")
+
+        plt.close("all")
+        plt.imshow(img, cmap="bone")
+        x = data_update.crs[it - 1, :, 1]
+        y = data_update.crs[it - 1, :, 0]
+        u = data_update.vfs[it - 1, :, 1]
+        v = data_update.vfs[it - 1, :, 0]
+        plt.quiver(y, x, u, v, color="yellow")
+        plt.savefig(f"{image_location_update}/image_{it:04d}.png")

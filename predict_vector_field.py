@@ -16,13 +16,13 @@ from vessel import Vessel
 from skimage import feature
 from tqdm import tqdm
 from skimage.metrics import structural_similarity
-from utils import enhance, load_image_num
+from utils import load_image_num
 
 FOLDER_NAME = sys.argv[1:][0]
 FRAME_RATE = float(sys.argv[1:][1])
 FRAME_INTERVAL = 5  # Compare images this many steps apart.
 DELTA_TIME = FRAME_INTERVAL / FRAME_RATE
-CORRELATION_THRESHOLD = 0.85
+CORRELATION_THRESHOLD = 0.5
 
 
 def estimate_velocity(first_image, second_image, dt):
@@ -31,7 +31,9 @@ def estimate_velocity(first_image, second_image, dt):
     sim, diff = structural_similarity(first_image, second_image, full=True)
     mask = np.ones_like(first_image).astype(bool)
     delta = feature.masked_register_translation(
-        first_image, second_image, mask, overlap_ratio=3 / 10)
+        second_image, first_image, mask, overlap_ratio=3 / 10)
+    # Reorient to translate matrix motion to 2D image.
+    delta[0] = delta[0]*-1
     return delta / dt, sim
 
 
@@ -70,8 +72,8 @@ def kalman(v_field):
     sz = (n_iter,)  # size of array
     Q = 1e-5        # process variance
 
-    vx = [v[0] for v in v_field]
-    vy = [v[1] for v in v_field]
+    vx = [v[1] for v in v_field]
+    vy = [v[0] for v in v_field]
 
     # Allocate space for arrays.
     xhat = np.zeros(sz)       # a posteri estimate of vx
@@ -108,12 +110,44 @@ def kalman(v_field):
         Py[k] = (1-Ky[k])*Pyminus[k]
 
     # Return filtered sequence with applied weights.
-    return np.matrix(tuple(zip(xhat, yhat)))
+    return xhat, yhat
+
+
+def update_kalman(vx, vy, weights):
+    avg = [[vy[0], vx[0]]]
+    num_x = 0
+    num_y = 0
+    denom = 0
+    size = 50
+    for i in range(1, len(vx)):
+
+        # Compute percent difference.
+        if vx[i] + avg[-1][1] != 0 and vy[i] + avg[-1][0] != 0:
+            diff_x = abs(vx[i] - avg[-1][1])/((vx[i]+avg[-1][1])/2)
+            diff_y = abs(vy[i] - avg[-1][0])/((vy[i]+avg[-1][0])/2)
+            if diff_x > (1 - CORRELATION_THRESHOLD) or diff_y > (1 - CORRELATION_THRESHOLD):
+                # Change calculation.
+                vx[i] = avg[-1][1]
+                vy[i] = avg[-1][0]
+
+        # Update averages.
+        num_x += weights[i]*vx[i]
+        num_y += weights[i]*vy[i]
+        denom += weights[i]
+        avg.append([num_y/denom, num_x/denom])
+
+        if len(avg) == size:
+            avg = avg[1:]
+            num_x -= weights[i-size]*vx[i-size]
+            num_y -= weights[i-size]*vy[i-size]
+            denom -= weights[i-size]
+
+    return np.matrix(tuple(zip(vy, vx)))
 
 
 def weighted_avg(v_field, weights):
-    vx = [v[0] for v in v_field]
-    vy = [v[1] for v in v_field]
+    vx = [v[1] for v in v_field]
+    vy = [v[0] for v in v_field]
     avg = []
     num_x = 0
     num_y = 0
@@ -122,43 +156,49 @@ def weighted_avg(v_field, weights):
         num_x += weights[i]*vx[i]
         num_y += weights[i]*vy[i]
         denom += weights[i]
-        avg.append([num_x/denom, num_y/denom])
+        avg.append([num_y/denom, num_x/denom])
 
-    avg_x = [a[0] for a in avg]
-    avg_y = [a[1] for a in avg]
+    avg_x = [a[1] for a in avg]
+    avg_y = [a[0] for a in avg]
 
-    return np.matrix(tuple(zip(avg_x, avg_y)))
+    return np.matrix(tuple(zip(avg_y, avg_x)))
 
 
 def update_vfs(v_field, weights):
-    ''' Keep running weighted avg for previous 10 tiles. If computed value is outside accepted threshold, use computed avg.'''
-    vx = [v[0] for v in v_field]
-    vy = [v[1] for v in v_field]
-    avg = [[vx[0], vy[0]]]
+    ''' Keep running weighted avg for previous 20 tiles. If computed value is outside accepted threshold, use computed avg.'''
+    vx = [v[1] for v in v_field]
+    vy = [v[0] for v in v_field]
+    avg = [[vy[0], vx[0]]]
     num_x = 0
     num_y = 0
     denom = 0
+    size = 50
     for i in range(1, len(v_field)):
-        if len(avg) == 10:
-            avg = [[vx[i-1], vy[1-1]]]
 
         # Compute percent difference.
-        diff_x = abs(vx[i] - avg[i-1][0])/((vx[i]+avg[i-1][0])/2)
-        diff_y = abs(vy[i] - avg[i-1][1])/((vy[i]+avg[i-1][1])/2)
-        if diff_x > (1 - CORRELATION_THRESHOLD) or diff_y > (1 - CORRELATION_THRESHOLD):
-            # Change calculation.
-            v_field[i] = avg[i-1]
+        if vx[i] + avg[-1][1] != 0 and vy[i] + avg[-1][0] != 0:
+            diff_x = abs(vx[i] - avg[-1][1])/((vx[i]+avg[-1][1])/2)
+            diff_y = abs(vy[i] - avg[-1][0])/((vy[i]+avg[-1][0])/2)
+            if diff_x > (1 - CORRELATION_THRESHOLD) or diff_y > (1 - CORRELATION_THRESHOLD):
+                # Change calculation.
+                v_field[i] = avg[-1]
 
         # Update averages.
         num_x += weights[i]*vx[i]
         num_y += weights[i]*vy[i]
         denom += weights[i]
-        avg.append([num_x/denom, num_y/denom])
+        avg.append([num_y/denom, num_x/denom])
+
+        if len(avg) == size:
+            avg = avg[1:]
+            num_x -= weights[i-size]*vx[i-size]
+            num_y -= weights[i-size]*vy[i-size]
+            denom -= weights[i-size]
 
     return v_field
 
 
-def process_images(tile_size=100, step_size=100, max_number_images=10, dt=DELTA_TIME):
+def process_images(tile_size=100, step_size=100, max_number_images=100, dt=DELTA_TIME):
     """Process multiple images."""
     crs = []
     vfs = []
@@ -178,23 +218,39 @@ def process_images(tile_size=100, step_size=100, max_number_images=10, dt=DELTA_
     # Kalman filter data for each tile.
     crs = np.array(crs)
     vfs = np.array(vfs)
-    filtered_vfs = np.zeros_like(vfs)
+    weighted_avg_vfs = np.zeros_like(vfs)
+    kalman_vfs = np.zeros_like(vfs)
+    update_avg_vfs = np.zeros_like(vfs)
     print("Applying filter.")
     n_tiles = len(crs[0])
     for index in tqdm(np.arange(n_tiles)):
         tile_field_series = [vf[index] for vf in vfs]
         tile_weight_series = [w[index] for w in weights]
-
-        # weighted_avg(tile_field_series, tile_weight_series)
-        # kalman(tile_field_series)
-        new_vfs = update_vfs(tile_field_series, tile_weight_series)
-        for seq in range(len(filtered_vfs)):
-            filtered_vfs[seq][index] = new_vfs[seq]
+        k_vx, k_vy = kalman(tile_field_series)
+        new_k = update_kalman(k_vx, k_vy, tile_weight_series)
+        new_u = update_vfs(tile_field_series, tile_weight_series)
+        new_w = weighted_avg(tile_field_series, tile_weight_series)
+        for seq in range(len(weighted_avg_vfs)):
+            weighted_avg_vfs[seq][index] = new_w[seq]
+            kalman_vfs[seq][index] = new_k[seq]
+            update_avg_vfs[seq][index] = new_u[seq]
 
     # Save this data.
-    v = Vessel("fields.dat")
+    v = Vessel("fields_kalman.dat")
     v.crs = crs
-    v.vfs = filtered_vfs
+    v.vfs = kalman_vfs
+    v.image_numbers = image_numbers
+    v.save()
+
+    v = Vessel("fields_weighted.dat")
+    v.crs = crs
+    v.vfs = weighted_avg_vfs
+    v.image_numbers = image_numbers
+    v.save()
+
+    v = Vessel("fields_update.dat")
+    v.crs = crs
+    v.vfs = update_avg_vfs
     v.image_numbers = image_numbers
     v.save()
 
