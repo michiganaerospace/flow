@@ -17,18 +17,22 @@ from skimage import feature
 from tqdm import tqdm
 from skimage.metrics import structural_similarity
 from utils import load_image_num
+from sklearn.metrics.pairwise import cosine_similarity
+from math import hypot
+from statistics import stdev, mean
 
 FOLDER_NAME = sys.argv[1:][0]
 FRAME_RATE = float(sys.argv[1:][1])
 FRAME_INTERVAL = 5  # Compare images this many steps apart.
 DELTA_TIME = FRAME_INTERVAL / FRAME_RATE
-CORRELATION_THRESHOLD = 0.5
 
 
 def estimate_velocity(first_image, second_image, dt):
     """Find the relative shift between the two tiles."""
     # Use structural similarity index as a weight for frame transaltion computation.
     sim, diff = structural_similarity(first_image, second_image, full=True)
+    if sim == 1:
+        print(sim)
     mask = np.ones_like(first_image).astype(bool)
     delta = feature.masked_register_translation(
         second_image, first_image, mask, overlap_ratio=3 / 10)
@@ -113,22 +117,39 @@ def kalman(v_field):
     return xhat, yhat
 
 
+def get_cos_sims(vx, vy):
+    '''Get cosine similarity vector.'''
+    cos_sim = []
+    for i in range(1, len(vx)):
+        v1 = np.array([[vx[i-1], vy[i-1]]])
+        v2 = np.array([[vx[i], vy[i]]])
+        cos_sim.append(cosine_similarity(v1, v2)[0][0])
+    return cos_sim
+
+
 def update_kalman(vx, vy, weights):
     avg = [[vy[0], vx[0]]]
     num_x = 0
     num_y = 0
     denom = 0
     size = 50
+
+    cos_sims = get_cos_sims(vx, vy)
+    st_dev = stdev(cos_sims)
+    mn = mean(cos_sims)
     for i in range(1, len(vx)):
 
         # Compute percent difference.
-        if vx[i] + avg[-1][1] != 0 and vy[i] + avg[-1][0] != 0:
-            diff_x = abs(vx[i] - avg[-1][1])/((vx[i]+avg[-1][1])/2)
-            diff_y = abs(vy[i] - avg[-1][0])/((vy[i]+avg[-1][0])/2)
-            if diff_x > (1 - CORRELATION_THRESHOLD) or diff_y > (1 - CORRELATION_THRESHOLD):
-                # Change calculation.
-                vx[i] = avg[-1][1]
-                vy[i] = avg[-1][0]
+        v1_mag = hypot(vx[i-1], vy[i-1])
+        v2_mag = hypot(vx[i], vy[i])
+        cos_sim = cos_sims[i-1]
+        mag_diff = 0
+        if v1_mag != 0:
+            mag_diff = abs(v2_mag - v1_mag)/v1_mag
+        if abs(mn - cos_sim) > st_dev or mag_diff > 0.1:
+            # Replace the ith value with the weighted average.
+            vx[i] = avg[-1][1]
+            vy[i] = avg[-1][0]
 
         # Update averages.
         num_x += weights[i]*vx[i]
@@ -164,40 +185,6 @@ def weighted_avg(v_field, weights):
     return np.matrix(tuple(zip(avg_y, avg_x)))
 
 
-def update_vfs(v_field, weights):
-    ''' Keep running weighted avg for previous 20 tiles. If computed value is outside accepted threshold, use computed avg.'''
-    vx = [v[1] for v in v_field]
-    vy = [v[0] for v in v_field]
-    avg = [[vy[0], vx[0]]]
-    num_x = 0
-    num_y = 0
-    denom = 0
-    size = 50
-    for i in range(1, len(v_field)):
-
-        # Compute percent difference.
-        if vx[i] + avg[-1][1] != 0 and vy[i] + avg[-1][0] != 0:
-            diff_x = abs(vx[i] - avg[-1][1])/((vx[i]+avg[-1][1])/2)
-            diff_y = abs(vy[i] - avg[-1][0])/((vy[i]+avg[-1][0])/2)
-            if diff_x > (1 - CORRELATION_THRESHOLD) or diff_y > (1 - CORRELATION_THRESHOLD):
-                # Change calculation.
-                v_field[i] = avg[-1]
-
-        # Update averages.
-        num_x += weights[i]*vx[i]
-        num_y += weights[i]*vy[i]
-        denom += weights[i]
-        avg.append([num_y/denom, num_x/denom])
-
-        if len(avg) == size:
-            avg = avg[1:]
-            num_x -= weights[i-size]*vx[i-size]
-            num_y -= weights[i-size]*vy[i-size]
-            denom -= weights[i-size]
-
-    return v_field
-
-
 def process_images(tile_size=100, step_size=100, max_number_images=100, dt=DELTA_TIME):
     """Process multiple images."""
     crs = []
@@ -227,8 +214,8 @@ def process_images(tile_size=100, step_size=100, max_number_images=100, dt=DELTA
         tile_field_series = [vf[index] for vf in vfs]
         tile_weight_series = [w[index] for w in weights]
         k_vx, k_vy = kalman(tile_field_series)
-        new_k = update_kalman(k_vx, k_vy, tile_weight_series)
-        new_u = update_vfs(tile_field_series, tile_weight_series)
+        new_k = np.matrix(tuple(zip(k_vy, k_vx)))
+        new_u = update_kalman(k_vx, k_vy, tile_weight_series)
         new_w = weighted_avg(tile_field_series, tile_weight_series)
         for seq in range(len(weighted_avg_vfs)):
             weighted_avg_vfs[seq][index] = new_w[seq]
