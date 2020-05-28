@@ -118,7 +118,7 @@ def kalman(v_field):
 
 
 def get_cos_sims(vx, vy):
-    '''Get cosine similarity vector.'''
+    '''Get cosine similarity vectors for vx and vy, comparing sequential values within each.'''
     cos_sim = []
     for i in range(1, len(vx)):
         v1 = np.array([[vx[i-1], vy[i-1]]])
@@ -127,25 +127,35 @@ def get_cos_sims(vx, vy):
     return cos_sim
 
 
-def update_kalman(vx, vy, weights):
+def smooth_kalman(vx, vy, weights):
+    """Remove outliers and smooth kalman filtered vx and vy given weights."""
+    # Initialize variables.
     avg = [[vy[0], vx[0]]]
+    # Initalize numerators and denominator for weighted avg calculation.
     num_x = 0
     num_y = 0
     denom = 0
+    # Set length of sequence for sliding window of weighted avg calculation.
     size = 50
 
+    # Get cosine similarity vectors for sequential values in vx and vy.
     cos_sims = get_cos_sims(vx, vy)
+    # Get statistical values for comparison with raw values.
     st_dev = stdev(cos_sims)
     mn = mean(cos_sims)
-    for i in range(1, len(vx)):
 
-        # Compute percent difference.
+    for i in range(1, len(vx)):
+        # Get magnitudes for vector between two images.
         v1_mag = hypot(vx[i-1], vy[i-1])
         v2_mag = hypot(vx[i], vy[i])
+
         cos_sim = cos_sims[i-1]
+
+        # Get percent difference in magnitude.
         mag_diff = 0
         if v1_mag != 0:
             mag_diff = abs(v2_mag - v1_mag)/v1_mag
+        # If values vary greatly, change them to weighted avg across the sliding window.
         if abs(mn - cos_sim) > st_dev or mag_diff > 0.1:
             # Replace the ith value with the weighted average.
             vx[i] = avg[-1][1]
@@ -157,6 +167,7 @@ def update_kalman(vx, vy, weights):
         denom += weights[i]
         avg.append([num_y/denom, num_x/denom])
 
+        # Slide window along when it reaches the specified size.
         if len(avg) == size:
             avg = avg[1:]
             num_x -= weights[i-size]*vx[i-size]
@@ -166,26 +177,7 @@ def update_kalman(vx, vy, weights):
     return np.matrix(tuple(zip(vy, vx)))
 
 
-def weighted_avg(v_field, weights):
-    vx = [v[1] for v in v_field]
-    vy = [v[0] for v in v_field]
-    avg = []
-    num_x = 0
-    num_y = 0
-    denom = 0
-    for i in range(0, len(v_field)):
-        num_x += weights[i]*vx[i]
-        num_y += weights[i]*vy[i]
-        denom += weights[i]
-        avg.append([num_y/denom, num_x/denom])
-
-    avg_x = [a[1] for a in avg]
-    avg_y = [a[0] for a in avg]
-
-    return np.matrix(tuple(zip(avg_y, avg_x)))
-
-
-def process_images(tile_size=100, step_size=100, max_number_images=100, dt=DELTA_TIME):
+def process_images(tile_size=100, step_size=100, max_number_images=20, dt=DELTA_TIME):
     """Process multiple images."""
     crs = []
     vfs = []
@@ -202,12 +194,11 @@ def process_images(tile_size=100, step_size=100, max_number_images=100, dt=DELTA
         weights.append(sims)
         image_numbers.append(image_number)
 
-    # Kalman filter data for each tile.
+    # Kalman filter data for each tile and get computed smoothed kalman filtered data.
     crs = np.array(crs)
     vfs = np.array(vfs)
-    weighted_avg_vfs = np.zeros_like(vfs)
     kalman_vfs = np.zeros_like(vfs)
-    update_avg_vfs = np.zeros_like(vfs)
+    smoothed_kalman_vfs = np.zeros_like(vfs)
     print("Applying filter.")
     n_tiles = len(crs[0])
     for index in tqdm(np.arange(n_tiles)):
@@ -215,12 +206,10 @@ def process_images(tile_size=100, step_size=100, max_number_images=100, dt=DELTA
         tile_weight_series = [w[index] for w in weights]
         k_vx, k_vy = kalman(tile_field_series)
         new_k = np.matrix(tuple(zip(k_vy, k_vx)))
-        new_u = update_kalman(k_vx, k_vy, tile_weight_series)
-        new_w = weighted_avg(tile_field_series, tile_weight_series)
-        for seq in range(len(weighted_avg_vfs)):
-            weighted_avg_vfs[seq][index] = new_w[seq]
+        new_u = smooth_kalman(k_vx, k_vy, tile_weight_series)
+        for seq in range(len(kalman_vfs)):
             kalman_vfs[seq][index] = new_k[seq]
-            update_avg_vfs[seq][index] = new_u[seq]
+            smoothed_kalman_vfs[seq][index] = new_u[seq]
 
     # Save this data.
     v = Vessel("fields_kalman.dat")
@@ -229,15 +218,9 @@ def process_images(tile_size=100, step_size=100, max_number_images=100, dt=DELTA
     v.image_numbers = image_numbers
     v.save()
 
-    v = Vessel("fields_weighted.dat")
+    v = Vessel("fields_smoothed_kalman.dat")
     v.crs = crs
-    v.vfs = weighted_avg_vfs
-    v.image_numbers = image_numbers
-    v.save()
-
-    v = Vessel("fields_update.dat")
-    v.crs = crs
-    v.vfs = update_avg_vfs
+    v.vfs = smoothed_kalman_vfs
     v.image_numbers = image_numbers
     v.save()
 

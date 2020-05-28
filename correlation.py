@@ -1,21 +1,35 @@
+"""correlation.py
+--
+For a given tile across N images, get a set of structural similarity computations between tiles spaced dN apart.
+Plots show a histogram of structural similarity computations for a tile pair sequence. 
+A histogram with a high mean would indicate the values are smooth with few outliers. 
+Idea is to collect tile pairs where structural similarity computations are outside one standard deviation of the mean and 
+change them to a weighted avg. 
+
+Takes argument FOLDER_NAME where raw wave images are stored.
+"""
+
 from scipy import signal
 from scipy import misc
 from glob import glob
 from utils import load_image_file
 from tqdm import tqdm
 import numpy as np
+import sys
 import matplotlib.pyplot as plt
 from skimage.metrics import structural_similarity
 from statistics import mean, stdev
 
-FOLDER = "waves40fps"
+FOLDER_NAME = sys.argv[1:][0]
+
+# Change these variables to inspect different histograms.
 N = 100  # Frames to include in computation.
 dN = 8  # Step between frames.
 
 
 def extract_tiles(image_sample, tile_size=100, step_size=100):
     """Extract uniformly sampled tiles from the image sample."""
-    # TODO fix to enforce all same size
+    # Potential fix: force all tiles to be same size, find an optimal tiling size.
     h, w = image_sample.shape
     rows = np.arange(0, h, step_size)
     cols = np.arange(0, w, step_size)
@@ -34,7 +48,7 @@ def extract_tiles(image_sample, tile_size=100, step_size=100):
 
 def get_sequences():
     """Return an array of tile sequences across frames."""
-    files = glob(f"./{FOLDER}/*")
+    files = glob(f"./{FOLDER_NAME}/*")
     img_tiles = []
     for cnt in range(N):
         img = load_image_file(files[cnt])
@@ -66,10 +80,11 @@ if __name__ == "__main__":
                 # plt.show()
         if vals != []:
             distributions.append(vals)
-        # plt.hist(vals)
-        # plt.show()
+            # plt.hist(vals)
+            # plt.show()
 
     # Plot mean values for each distribution of similarity indices for a tile sequence.
+    # We want to see histograms skewed toward and centered on high correlation.
     means = [mean(d) for d in distributions]
     plt.hist(means)
     plt.show()
